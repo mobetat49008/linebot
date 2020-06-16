@@ -15,16 +15,21 @@ import sys
 from bs4 import BeautifulSoup
 sys.path.append("../include")
 import inc
+sys.path.append("../logging")
+from logger import log
 
 msgban = ["嗨", "我男", "男", "不是女" , "大叔", "line", "私"]
 #msgban = ["私"]
 msgquit = ["對方已離開聊天"]
-msgsend = u'午安 台北30夜景純粹喝大叔'
+msgsend = u'晚安 台北30夜景純粹喝大叔'
 #msgsend = u'台北女'
+
+quitloop = 0
 
 class Wootalk():
     def setUp(self,responseTime):
-        self.driver = webdriver.Chrome(executable_path="C:\Python34\Scripts\chromedriver.exe")
+        #executable_path="C:\Users\mobet\AppData\Local\Programs\Python\Python38-32\Scriptschromedriver.exe"
+        self.driver = webdriver.Chrome()
         self.driver.implicitly_wait(10)
         self.base_url = "https://knock.tw/"
         self.verificationErrors = []
@@ -33,7 +38,8 @@ class Wootalk():
         self.driver.get(self.base_url)
     
     def launch(self):
-
+        
+        global quitloop
         #selenium usage
         driver = self.driver
         driver.get(self.base_url)
@@ -44,44 +50,91 @@ class Wootalk():
         msg_init= []
         msg_receive = ''
         message_sent = False
+        log.info('進入launch')
 
         try:
             WebDriverWait(driver,1).until(EC.presence_of_element_located((By.XPATH, '//button[@class="start"]'))).click()
-            message=driver.find_element_by_class_name('main-input')
-        except:
+        #except TimeoutException as e:            
+        except Exception as e: 
+            #log.info("Can't find start button,exception=%s",e)
             print("Can't find start button")
+            #print(type(e),e)
             #Can't find start button so try to press exit button
-            try:
-                WebDriverWait(driver,1).until(EC.presence_of_element_located((By.XPATH, '//button[text()="對話已結束，請點我重新配對聊天"]'))).click()
-            except:
-                print("Can't find start button-->Quit")
+            #except TimeoutException as e:
+            #    print("(0)TimeoutException")
+            #    driver.close()
+            #    driver.quit()
+            #except Exception as e: 
+            if quitloop >= 3 :
+                driver.find_element_by_xpath("//i[@title=\"顯示更多操作\"]").click()
+                time.sleep(1)
+                driver.find_element_by_xpath("//i[@title=\"離開對話\"]").click()
+                time.sleep(1)
+                
+                #有時候會有按不到的情形
+                try:                               
+                    driver.find_element_by_xpath("//button[@class='modal-default-button confirm']").click()
+                except:
+                    WebDriverWait(driver,1).until(EC.presence_of_element_located((By.XPATH, '//button[@class="start"]'))).click()    
+                i = 0
+                message_sent = False
+                log.error('卡住太久')
                 return False
-            
-        time.sleep(3)
-        
+  
+            #return False
+            print("Exception happened, Quitloop=",quitloop)
+            pass
+        quitloop += 1
+                
         try:
             #有時候來不及送訊息對方就斷開連接
             WebDriverWait(driver,1).until(EC.presence_of_element_located((By.XPATH, '//button[text()="對話已結束，請點我重新配對聊天"]'))).click()
-            print("Connection is disconnected before sending the msg")
+            log.error("Connection is disconnected before sending the msg")
+            quitloop = 0
             return False
-        except:
+        #except TimeoutException as e:
+            #print("(1)TimeoutException")
+        except Exception as e: 
+            print("來不及送訊息對方就斷開連接")
+            #print(type(e),e)
             pass
+            
+        #time.sleep(2)
+        #print("Test2")
+        message=driver.find_element_by_class_name('main-input')
 
         for msg in driver.find_elements_by_xpath("//div[@class=\"message-content\"]"):
+            log.info("準備發送訊息")
             if msgquit[0] in msg.text:
 
                 #driver.find_element_by_xpath("//button[text()=\"對話已結束，請點我重新配對聊天\"]").click()
-                WebDriverWait(driver,1).until(EC.presence_of_element_located((By.XPATH, '//button[text()="對話已結束，請點我重新配對聊天"]'))).click()
-                print("對方斷開聊天-0")
-                return False
+                try:
+                    WebDriverWait(driver,1).until(EC.presence_of_element_located((By.XPATH, '//button[text()="對話已結束，請點我重新配對聊天"]'))).click()
+                    log.error("對方斷開聊天-0")
+                    quitloop = 0
+                    return False
+                except Exception as e: 
+                    #也會發生無法發送訊息就斷開的情形
+                    if message_sent==False:
+                        try:
+                            message.send_keys(msgsend)
+                            log.info("(0)填入訊息")
+                        except:
+                            driver.find_element_by_xpath("//button[text()=\"對話已結束，請點我重新配對聊天\"]").click()
+                            print("(0)無法傳送訊息!對方離開")
+                        driver.find_element_by_class_name('send').click()
+                        message_sent=True
+                    
             else:
                 if message_sent==False:
                 
                     #也會發生無法發送訊息就斷開的情形
                     try:
                         message.send_keys(msgsend)
-                    except:
+                        log.info("(1)填入訊息")
+                    except Exception as e: 
                         driver.find_element_by_xpath("//button[text()=\"對話已結束，請點我重新配對聊天\"]").click()
+                        print("(1)無法傳送訊息!對方離開")
                     driver.find_element_by_class_name('send').click()
                     message_sent=True
 
@@ -92,7 +145,8 @@ class Wootalk():
 
         i = 0
         while 1:
-            print("===START====")
+            quitloop = 0
+            log.warning("===START====(%d/%d)",i,self.responseTime)
         
             texts = len(driver.find_elements_by_xpath("//div[@class=\"message-content\"]"))
             
@@ -102,12 +156,12 @@ class Wootalk():
             
             msglist = []
 
-            print("loop time=",i)
-            print("Quit loop times = ",self.responseTime) 
-            print("總訊息長度=",texts)
+            log.info("loop time=%d",i)
+            log.info("Quit loop times = %d",self.responseTime) 
+            log.info("總訊息長度=%d",texts)
             
             if i == self.responseTime :
-                #print("超過時間,換人!")
+                log.warning("超過時間,換人!")
                 driver.find_element_by_xpath("//i[@title=\"顯示更多操作\"]").click()
                 time.sleep(1)
                 driver.find_element_by_xpath("//i[@title=\"離開對話\"]").click()
@@ -120,7 +174,7 @@ class Wootalk():
                 #    WebDriverWait(driver,1).until(EC.presence_of_element_located((By.XPATH, '//button[@class="start"]'))).click()  
                 i = 0
                 message_sent = False
-                print("對方斷開聊天-1")
+                log.error("斷開聊天(超過等待上限)")
                 return False
             else :
                 #print(find_elements_by_xpath("//span[contains(text())]") )
@@ -129,10 +183,10 @@ class Wootalk():
                 
                
                 #對方有訊息 
-                #print("等待對方發訊") 
+                log.info("等待對方發訊") 
 
                 if texts > 2:
-                    #print("對方有訊息") 
+                    log.info("對方有訊息") 
 
                     #BeautifulSoup usage
                     #Noted soup is not suit for chat , 解析不出對話
@@ -173,14 +227,14 @@ class Wootalk():
                                     WebDriverWait(driver,1).until(EC.presence_of_element_located((By.XPATH, '//button[@class="start"]'))).click()    
                                 i = 0
                                 message_sent = False
-                                print("符合跳出關鍵字")
+                                log.error("斷開聊天(符合跳出關鍵字)")
                                 return False
                             elif msgquit[0] in msg.text: 
 
                                 #print("對方離開")
                                 #driver.find_element_by_xpath("//button[text()=\"對話已結束，請點我重新配對聊天\"]").click()
                                 WebDriverWait(driver,1).until(EC.presence_of_element_located((By.XPATH, '//button[text()="對話已結束，請點我重新配對聊天"]'))).click()
-                                print("對方斷開聊天-2")
+                                log.error("斷開聊天(對方離開-0)")
                                 return False
                             #else :
                                 #例外1.len(msg.text)!= len(msg_init)*2 : 初始字串重複兩次
@@ -207,7 +261,7 @@ class Wootalk():
                                 #print(inc.Getstr())
 
                     if i>=2:
-                        print("通知介入")
+                        log.warning("通知介入")
                         #print("2=====msg_receive:",msg_receive)
                         #print(inc.Getstr())
                         return True
@@ -222,7 +276,7 @@ class Wootalk():
                 #對方斷開聊天
                 #print("對方斷開聊天-3-1")
                 WebDriverWait(driver,1).until(EC.presence_of_element_located((By.XPATH, '//button[text()="對話已結束，請點我重新配對聊天"]'))).click()
-                print("對方斷開聊天-3-2")
+                log.error("斷開聊天(對方離開-1)")
                 return False
 
             except:
