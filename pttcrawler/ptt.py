@@ -10,7 +10,7 @@ import inc
 import json
 
 ID=["pppla","dddddddd","zeen3033"]
-Password="2b58aaj2"
+Password=""
 Query = True
 str1=''
 str2=''
